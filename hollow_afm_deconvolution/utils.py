@@ -63,8 +63,60 @@ def erosion(surface: Surface, tip: Tip) -> Surface:
     return Surface(eroded.squeeze(0).squeeze(0))
 
 
+
+def opening(surface: Surface, tip: Tip) -> Surface:
+    surface_data = surface.data.clone()
+    tip_data = tip.data.clone()
+
+    surf_xsiz, surf_ysiz = surface_data.shape
+    tip_xsiz, tip_ysiz = tip_data.shape
+    xc = tip_xsiz // 2
+    yc = tip_ysiz // 2
+
+    # Padding the surface
+    padded_surface = F.pad(
+        surface_data.unsqueeze(0).unsqueeze(0),
+        (yc, yc, xc, xc),
+        mode="constant",
+        value=0,
+    )
+
+    # Create a sliding window view of the padded surface
+    window_shape = tip_data.shape
+    strides = padded_surface.stride()[2:] * 2
+    windows = torch.as_strided(
+        padded_surface, (surf_xsiz, surf_ysiz) + window_shape, strides
+    )
+
+    # Perform dilation followed by erosion
+    dilated = torch.amax(windows + tip_data.view(1, 1, tip_xsiz, tip_ysiz), dim=(2, 3))
+
+
+    # Prepare for erosion
+    dilated_padded = F.pad(
+        dilated.unsqueeze(0).unsqueeze(0),
+        (yc, yc, xc, xc),
+        mode="constant",
+        value=torch.max(surface_data)
+    )
+
+    # Create a sliding window view of the dilated surface for erosion
+    dilated_windows = torch.as_strided(
+        dilated_padded, (surf_xsiz, surf_ysiz) + window_shape, strides
+    )
+
+    # Perform erosion
+    eroded = torch.amin(dilated_windows - tip_data.view(1, 1, tip_xsiz, tip_ysiz), dim=(2, 3))
+
+    return Surface(eroded.squeeze(0).squeeze(0))
+
 def dilation_and_erosion(surface: Surface, tip: Tip) -> Surface:
-    return erosion(dilation(surface, tip), tip)
+    """Alias for opening"""
+    return opening(surface, tip)
+
+def opening_and_dilation(surface: Surface, tip: Tip) -> Surface:
+    """Alias for closing"""
+    return dilation(opening(surface, tip), tip)
 
 
 if __name__ == "__main__":
